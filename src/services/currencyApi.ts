@@ -7,6 +7,7 @@ import {
   hasCachedData 
 } from './cacheManager';
 import { canMakeApiCall, recordApiCall, getTimeUntilNextCall } from './rateLimiter';
+import { fetchRatesFromBackend, saveRatesToBackend, isBackendAvailable } from './backendApi';
 
 // Alpha Vantage API configuration
 // Note: In production, consider using environment variables
@@ -143,6 +144,29 @@ export async function getCurrencyPairData(
     return cached.rates;
   }
 
+  // Try to fetch from backend database first (if available)
+  try {
+    const backendAvailable = await isBackendAvailable();
+    if (backendAvailable) {
+      const backendRates = await fetchRatesFromBackend(from, to);
+      if (backendRates.length > 0) {
+        // Convert backend format to DailyRate format
+        const rates: DailyRate[] = backendRates.map(r => ({
+          date: r.date,
+          open: r.open,
+          high: r.high,
+          low: r.low,
+          close: r.close,
+        }));
+        // Save to local cache
+        await saveCurrencyData(from, to, rates);
+        return rates;
+      }
+    }
+  } catch (error) {
+    console.warn('Backend fetch failed, trying API:', error);
+  }
+
   // Only fetch from API if:
   // 1. forceRefresh is true (user clicked refresh), OR
   // 2. No cached data exists at all
@@ -150,6 +174,24 @@ export async function getCurrencyPairData(
     try {
       const rates = await fetchFromApi(from, to);
       await saveCurrencyData(from, to, rates);
+      
+      // Also save to backend for persistence
+      try {
+        const backendRates = rates.map(r => ({
+          from,
+          to,
+          date: r.date,
+          open: r.open,
+          high: r.high,
+          low: r.low,
+          close: r.close,
+        }));
+        await saveRatesToBackend(backendRates);
+        console.log(`Saved ${rates.length} rates to backend for ${from}/${to}`);
+      } catch (backendError) {
+        console.warn('Failed to save to backend:', backendError);
+      }
+      
       return rates;
     } catch (error) {
       // If API fails but we have stale cache, use it
