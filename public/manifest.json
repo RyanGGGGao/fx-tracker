@@ -1,0 +1,16 @@
+{
+  "name": "FX Tracker",
+  "short_name": "FX",
+  "description": "外汇货币走势追踪 - 实时追踪主流货币价格走势",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
