@@ -58,8 +58,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Save rates (batch insert)
       const { rates } = req.body;
 
-      if (!rates || !Array.isArray(rates) || rates.length === 0) {
+      if (!rates || !Array.isArray(rates)) {
         return res.status(400).json({ error: 'Missing or invalid rates data' });
+      }
+
+      // Return success for empty array (nothing to save)
+      if (rates.length === 0) {
+        return res.status(200).json({ success: true, message: 'No records to save' });
       }
 
       // Prepare data for upsert

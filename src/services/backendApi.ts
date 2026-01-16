@@ -1,5 +1,6 @@
 // Backend API service for fetching and saving exchange rates
-const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
+// Always use relative path since frontend and API are on same origin
+const API_BASE = '/api';
 
 export interface ExchangeRateRecord {
   from_currency: string;

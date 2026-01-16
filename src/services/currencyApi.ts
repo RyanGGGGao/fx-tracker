@@ -11,7 +11,7 @@ import { fetchRatesFromBackend, saveRatesToBackend, isBackendAvailable } from '.
 
 // Alpha Vantage API configuration
 // Note: In production, consider using environment variables
-const API_KEY = 'ATGWDM9JZW2BPH38'; // Replace with your free API key from https://www.alphavantage.co/support/#api-key
+const API_KEY = 'PD2ZZ3QRI8T37ASQ'; // Replace with your free API key from https://www.alphavantage.co/support/#api-key
 const API_BASE = 'https://www.alphavantage.co/query';
 
 interface AlphaVantageResponse {
@@ -175,21 +175,23 @@ export async function getCurrencyPairData(
       const rates = await fetchFromApi(from, to);
       await saveCurrencyData(from, to, rates);
       
-      // Also save to backend for persistence
-      try {
-        const backendRates = rates.map(r => ({
-          from,
-          to,
-          date: r.date,
-          open: r.open,
-          high: r.high,
-          low: r.low,
-          close: r.close,
-        }));
-        await saveRatesToBackend(backendRates);
-        console.log(`Saved ${rates.length} rates to backend for ${from}/${to}`);
-      } catch (backendError) {
-        console.warn('Failed to save to backend:', backendError);
+      // Also save to backend for persistence (only if we have data)
+      if (rates.length > 0) {
+        try {
+          const backendRates = rates.map(r => ({
+            from,
+            to,
+            date: r.date,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+          }));
+          await saveRatesToBackend(backendRates);
+          console.log(`Saved ${rates.length} rates to backend for ${from}/${to}`);
+        } catch (backendError) {
+          console.warn('Failed to save to backend:', backendError);
+        }
       }
       
       return rates;
