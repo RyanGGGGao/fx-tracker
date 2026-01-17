@@ -394,9 +394,11 @@ export async function syncAllCachedDataToBackend(
 }
 
 // Background sync: silently fetch all currency pairs from backend to local cache
+// priorityCurrency: if specified, sync this currency FIRST, then others in background
 // This runs in background without blocking UI, user can still interact with the app
 export async function backgroundSyncFromBackend(
-  onComplete?: (result: { success: number; failed: number; totalRecords: number }) => void
+  onComplete?: (result: { success: number; failed: number; totalRecords: number }) => void,
+  priorityCurrency?: CurrencyCode
 ): Promise<void> {
   // Run in background, don't await
   (async () => {
@@ -405,9 +407,18 @@ export async function backgroundSyncFromBackend(
     let failed = 0;
     let totalRecords = 0;
 
-    console.log('🔄 开始后台同步数据...');
+    // Reorder currencies: priority first, then others
+    let orderedCurrencies = [...FETCH_CURRENCIES];
+    if (priorityCurrency && priorityCurrency !== BASE_CURRENCY) {
+      orderedCurrencies = [
+        priorityCurrency,
+        ...FETCH_CURRENCIES.filter(c => c !== priorityCurrency)
+      ];
+    }
 
-    for (const currency of FETCH_CURRENCIES) {
+    console.log('🔄 开始后台同步数据...', priorityCurrency ? `优先: ${priorityCurrency}` : '');
+
+    for (const currency of orderedCurrencies) {
       const pairName = `${currency}/${BASE_CURRENCY}`;
 
       try {

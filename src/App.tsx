@@ -63,18 +63,28 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Background sync on first load - does NOT block user interaction
+  // Background sync on first load - prioritize current currency, then sync others
   useEffect(() => {
-    // Start background sync immediately but don't block
+    // Start background sync with priority on current currency
     setIsSyncingBackground(true);
     backgroundSyncFromBackend((result) => {
       setIsSyncingBackground(false);
       if (result.totalRecords > 0) {
         console.log(`后台同步完成: ${result.success} 个货币对, ${result.totalRecords} 条记录`);
         setLastUpdated(Date.now());
+        // Trigger refresh to show newly synced data
+        singleCurrencyData.refresh();
       }
-    });
+    }, fromCurrency); // Prioritize current currency
   }, []); // Only run once on mount
+
+  // When user switches currency, trigger background sync for the new currency first
+  useEffect(() => {
+    // Only trigger if we're not in initial sync
+    if (!isSyncingBackground) {
+      backgroundSyncFromBackend(undefined, fromCurrency);
+    }
+  }, [fromCurrency]); // Re-run when currency changes
 
   // Handle manual refresh - refreshes ALL currencies
   const handleRefresh = useCallback(async () => {

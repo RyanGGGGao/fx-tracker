@@ -32,7 +32,8 @@ export function useCurrencyData(options: UseCurrencyDataOptions): UseCurrencyDat
   } = options;
 
   const [data, setData] = useState<DailyRate[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start with loading=true so user sees loading indicator immediately
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [rateLimitStatus, setRateLimitStatus] = useState<RateLimitStatus>(getRateLimitStatus());
 
@@ -109,7 +110,8 @@ export function useComparisonData(
 ): UseComparisonDataResult {
   const [data1, setData1] = useState<DailyRate[]>([]);
   const [data2, setData2] = useState<DailyRate[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start with loading=true so user sees loading indicator immediately
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
@@ -177,7 +179,8 @@ export function useMultiComparisonData(
   enabled: boolean = true
 ): UseMultiComparisonDataResult {
   const [dataMap, setDataMap] = useState<Map<CurrencyCode, DailyRate[]>>(new Map());
-  const [loading, setLoading] = useState(false);
+  // Start with loading=true so user sees loading indicator immediately
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   // Filter out base currency from comparison (comparing X/USD, USD/USD makes no sense)
