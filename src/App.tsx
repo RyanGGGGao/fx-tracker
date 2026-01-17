@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import dayjs from 'dayjs';
-import { CurrencyCode, ViewMode, BASE_CURRENCY, FETCH_CURRENCIES, ChartType } from './types';
+import { CurrencyCode, ViewMode, BASE_CURRENCY, ChartType } from './types';
 import { CurrencyPairSelector, MultiCurrencySelector } from './components/CurrencySelector';
 import DateRangePicker from './components/DateRangePicker';
 import CurrencyChart from './components/CurrencyChart';
@@ -8,7 +8,7 @@ import MultiComparisonChart from './components/MultiComparisonChart';
 import StatusBar from './components/StatusBar';
 import CacheStatus from './components/CacheStatus';
 import { useCurrencyData, useMultiComparisonData } from './hooks/useCurrencyData';
-import { prefetchBasePairs, needsInitialLoad, syncAllCachedDataToBackend } from './services/currencyApi';
+import { prefetchBasePairs, syncAllCachedDataToBackend, backgroundSyncFromBackend } from './services/currencyApi';
 
 const App: React.FC = () => {
   // View mode
@@ -34,21 +34,19 @@ const App: React.FC = () => {
   );
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
 
-  // Loading state for initial data fetch
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [initProgress, setInitProgress] = useState({ current: 0, total: FETCH_CURRENCIES.length, currency: '' });
-  const [initError, setInitError] = useState<string | null>(null);
+  // Loading state - no longer blocks user, just shows sync status
+  const [isSyncingBackground, setIsSyncingBackground] = useState(false);
 
   // Cache status dialog
   const [showCacheStatus, setShowCacheStatus] = useState(false);
 
-  // Single currency view data
+  // Single currency view data - enabled immediately, no waiting
   const singleCurrencyData = useCurrencyData({
     from: fromCurrency,
     to: toCurrency,
     startDate,
     endDate,
-    enabled: !isInitializing,
+    enabled: true, // Always enabled - data will load from cache or backend on demand
   });
 
   // Multi-currency comparison view data
@@ -57,7 +55,7 @@ const App: React.FC = () => {
     baseCurrency,
     startDate,
     endDate,
-    !isInitializing
+    true // Always enabled
   );
 
   // Last updated timestamp
@@ -65,40 +63,24 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Initialize data on first load - NO automatic API calls
-  // API is ONLY called when user manually clicks refresh
+  // Background sync on first load - does NOT block user interaction
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        const needsInit = await needsInitialLoad();
-        
-        if (needsInit) {
-          console.log('首次使用，无缓存数据。请点击刷新按钮获取数据。');
-          // Don't call API automatically - just show empty state
-          // User must click refresh button to fetch data
-        } else {
-          console.log('使用缓存数据');
-        }
-        
-        setIsInitializing(false);
+    // Start background sync immediately but don't block
+    setIsSyncingBackground(true);
+    backgroundSyncFromBackend((result) => {
+      setIsSyncingBackground(false);
+      if (result.totalRecords > 0) {
+        console.log(`后台同步完成: ${result.success} 个货币对, ${result.totalRecords} 条记录`);
         setLastUpdated(Date.now());
-      } catch (error) {
-        console.error('初始化失败:', error);
-        setInitError(error instanceof Error ? error.message : '初始化失败');
-        setIsInitializing(false);
       }
-    };
-
-    initializeData();
-  }, []);
+    });
+  }, []); // Only run once on mount
 
   // Handle manual refresh - refreshes ALL currencies
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await prefetchBasePairs((current, total, currency) => {
-        setInitProgress({ current, total, currency });
-      }, true); // Force refresh
+      await prefetchBasePairs(() => {}, true); // Force refresh
       
       // Trigger re-fetch in current view
       switch (viewMode) {
@@ -149,56 +131,17 @@ const App: React.FC = () => {
 
   // No auto-refresh - only manual refresh to save API calls
 
-  // Show initialization screen
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full mx-4">
-          <div className="flex items-center justify-center mb-6">
-            <div className="w-16 h-16 bg-primary-600 rounded-xl flex items-center justify-center">
-              <span className="text-2xl font-bold text-white">FX</span>
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-center text-gray-800 mb-2">
-            正在初始化数据
-          </h2>
-          <p className="text-gray-500 text-center mb-6">
-            首次加载需要获取所有货币数据，请稍候...
-          </p>
-          
-          {/* Progress bar */}
-          <div className="mb-4">
-            <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>加载进度</span>
-              <span>{initProgress.current}/{initProgress.total}</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(initProgress.current / initProgress.total) * 100}%` }}
-              />
-            </div>
-            {initProgress.currency && (
-              <p className="text-sm text-gray-500 mt-2 text-center">
-                正在获取 {initProgress.currency}/USD...
-              </p>
-            )}
-          </div>
-
-          {initError && (
-            <div className="bg-red-50 text-red-600 rounded-lg p-3 text-sm">
-              {initError}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Background sync indicator */}
+      {isSyncingBackground && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-500 text-white text-center text-sm py-1 z-50">
+          🔄 正在后台同步数据，您可以继续操作...
+        </div>
+      )}
+      
       {/* Header */}
-      <header className="bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg">
+      <header className={`bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg ${isSyncingBackground ? 'mt-7' : ''}`}>
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

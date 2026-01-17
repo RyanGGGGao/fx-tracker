@@ -94,9 +94,10 @@ async function fetchFromApi(
 }
 
 // Get currency data (from cache or API)
-// Strategy: ALWAYS use cache if available, only call API when:
-// 1. No cache exists at all, OR
-// 2. User manually clicks refresh button (forceRefresh = true)
+// NEW Strategy: Cache-first for instant response
+// 1. Return local cache immediately if available (fast response)
+// 2. If no cache, try backend database (slower but has data)
+// 3. Only call external API when user clicks refresh
 export async function getCurrencyPairData(
   from: CurrencyCode,
   to: CurrencyCode,
@@ -137,18 +138,17 @@ export async function getCurrencyPairData(
 
   // Case 3: from=X, to=USD (direct cache lookup)
 
-  // ALWAYS check cache first (regardless of date)
+  // STEP 1: ALWAYS check local cache first for instant response
   const cached = await getCurrencyData(from, to);
   
-  // If we have cached data and not forcing refresh, return it
+  // If we have cached data and not forcing refresh, return immediately
   if (cached && cached.rates.length > 0 && !forceRefresh) {
     return cached.rates;
   }
 
-  // Try to fetch from backend database first (if available)
-  try {
-    const backendAvailable = await isBackendAvailable();
-    if (backendAvailable) {
+  // STEP 2: No local cache, try to fetch from backend database
+  if (!forceRefresh) {
+    try {
       const backendRates = await fetchRatesFromBackend(from, to);
       if (backendRates.length > 0) {
         // Convert backend format to DailyRate format
@@ -159,18 +159,18 @@ export async function getCurrencyPairData(
           low: r.low,
           close: r.close,
         }));
-        // Save to local cache
+        // Save to local cache for future instant access
         await saveCurrencyData(from, to, rates);
         return rates;
       }
+    } catch (error) {
+      console.warn('Backend fetch failed:', error);
     }
-  } catch (error) {
-    console.warn('Backend fetch failed, trying API:', error);
   }
 
-  // Only fetch from API if:
-  // 1. forceRefresh is true (user clicked refresh), OR
-  // 2. No cached data exists at all
+  // STEP 3: Only fetch from external API if:
+  // - forceRefresh is true (user clicked refresh), OR
+  // - No data from cache or backend
   if (forceRefresh || !cached || cached.rates.length === 0) {
     try {
       const rates = await fetchFromApi(from, to);
@@ -392,3 +392,108 @@ export async function syncAllCachedDataToBackend(
 
   return { success, failed, totalRecords };
 }
+
+// Background sync: silently fetch all currency pairs from backend to local cache
+// This runs in background without blocking UI, user can still interact with the app
+export async function backgroundSyncFromBackend(
+  onComplete?: (result: { success: number; failed: number; totalRecords: number }) => void
+): Promise<void> {
+  // Run in background, don't await
+  (async () => {
+    const total = FETCH_CURRENCIES.length;
+    let success = 0;
+    let failed = 0;
+    let totalRecords = 0;
+
+    console.log('🔄 开始后台同步数据...');
+
+    for (const currency of FETCH_CURRENCIES) {
+      const pairName = `${currency}/${BASE_CURRENCY}`;
+
+      try {
+        // Check if we already have cached data
+        const hasData = await hasCachedData(currency, BASE_CURRENCY);
+        if (hasData) {
+          success++;
+          continue;
+        }
+
+        // Fetch from backend
+        const backendRates = await fetchRatesFromBackend(currency, BASE_CURRENCY);
+        if (backendRates.length > 0) {
+          const rates: DailyRate[] = backendRates.map(r => ({
+            date: r.date,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+          }));
+          await saveCurrencyData(currency, BASE_CURRENCY, rates);
+          totalRecords += rates.length;
+          success++;
+          console.log(`✓ 后台同步 ${pairName}: ${rates.length} 条`);
+        } else {
+          failed++;
+        }
+      } catch (error) {
+        console.warn(`后台同步 ${pairName} 失败:`, error);
+        failed++;
+      }
+    }
+
+    console.log(`✅ 后台同步完成: ${success}/${total} 成功, ${totalRecords} 条记录`);
+    onComplete?.({ success, failed, totalRecords });
+  })();
+}
+
+// Prefetch all currency pairs from backend (Supabase) to local cache
+// This is the blocking version for initial load screen
+export async function prefetchAllFromBackend(
+  onProgress?: (current: number, total: number, pair: string) => void
+): Promise<{ success: number; failed: number; totalRecords: number }> {
+  const total = FETCH_CURRENCIES.length;
+  let current = 0;
+  let success = 0;
+  let failed = 0;
+  let totalRecords = 0;
+
+  for (const currency of FETCH_CURRENCIES) {
+    const pairName = `${currency}/${BASE_CURRENCY}`;
+    current++;
+
+    try {
+      // Check if we already have cached data
+      const hasData = await hasCachedData(currency, BASE_CURRENCY);
+      if (hasData) {
+        success++;
+        onProgress?.(current, total, pairName);
+        continue;
+      }
+
+      // Fetch from backend
+      const backendRates = await fetchRatesFromBackend(currency, BASE_CURRENCY);
+      if (backendRates.length > 0) {
+        const rates: DailyRate[] = backendRates.map(r => ({
+          date: r.date,
+          open: r.open,
+          high: r.high,
+          low: r.low,
+          close: r.close,
+        }));
+        await saveCurrencyData(currency, BASE_CURRENCY, rates);
+        totalRecords += rates.length;
+        success++;
+      } else {
+        failed++;
+      }
+    } catch (error) {
+      console.warn(`加载 ${pairName} 失败:`, error);
+      failed++;
+    }
+
+    onProgress?.(current, total, pairName);
+  }
+
+  return { success, failed, totalRecords };
+}
+
