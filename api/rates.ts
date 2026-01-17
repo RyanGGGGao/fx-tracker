@@ -31,7 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('*')
         .eq('from_currency', from)
         .eq('to_currency', to)
-        .order('date', { ascending: true });
+        .order('date', { ascending: true })
+        .limit(10000);  // Supabase default is 1000, increase to get all historical data
 
       if (start_date) {
         query = query.gte('date', start_date);
