@@ -7,6 +7,8 @@ interface StatusBarProps {
   onRefresh?: () => void;
   refreshing?: boolean;
   onCheckCache?: () => void;
+  onSyncToCloud?: () => void;
+  syncing?: boolean;
 }
 
 interface CacheInfoState {
@@ -21,6 +23,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   onRefresh,
   refreshing = false,
   onCheckCache,
+  onSyncToCloud,
+  syncing = false,
 }) => {
   const [status, setStatus] = useState<RateLimitStatus>(getRateLimitStatus());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -152,6 +156,35 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                 />
               </svg>
               <span>检查缓存</span>
+            </button>
+          )}
+
+          {onSyncToCloud && (
+            <button
+              onClick={onSyncToCloud}
+              disabled={syncing || !isOnline}
+              className={`flex items-center gap-1 px-3 py-1 rounded-lg transition-colors
+                ${
+                  syncing || !isOnline
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+              title="将本地缓存数据同步到云端数据库"
+            >
+              <svg
+                className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              <span>{syncing ? '同步中...' : '同步到云端'}</span>
             </button>
           )}
 

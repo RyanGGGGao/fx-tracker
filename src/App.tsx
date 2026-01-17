@@ -8,7 +8,7 @@ import MultiComparisonChart from './components/MultiComparisonChart';
 import StatusBar from './components/StatusBar';
 import CacheStatus from './components/CacheStatus';
 import { useCurrencyData, useMultiComparisonData } from './hooks/useCurrencyData';
-import { prefetchBasePairs, needsInitialLoad } from './services/currencyApi';
+import { prefetchBasePairs, needsInitialLoad, syncAllCachedDataToBackend } from './services/currencyApi';
 
 const App: React.FC = () => {
   // View mode
@@ -63,6 +63,7 @@ const App: React.FC = () => {
   // Last updated timestamp
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Initialize data on first load - NO automatic API calls
   // API is ONLY called when user manually clicks refresh
@@ -116,6 +117,29 @@ const App: React.FC = () => {
     }
   // 只依赖 refresh 函数，避免整个对象变化导致重新创建
   }, [viewMode, singleCurrencyData.refresh, multiComparisonData.refresh]);
+
+  // Sync all cached data to cloud (Supabase)
+  const handleSyncToCloud = useCallback(async () => {
+    if (isSyncing) return;
+    
+    setIsSyncing(true);
+    try {
+      const result = await syncAllCachedDataToBackend((current, total, pair) => {
+        console.log(`同步进度: ${current}/${total} - ${pair}`);
+      });
+      
+      if (result.failed === 0) {
+        alert(`✓ 同步完成！\n成功: ${result.success} 个货币对\n总记录数: ${result.totalRecords} 条`);
+      } else {
+        alert(`同步部分完成\n成功: ${result.success} 个\n失败: ${result.failed} 个\n总记录数: ${result.totalRecords} 条`);
+      }
+    } catch (error) {
+      console.error('同步失败:', error);
+      alert('同步失败，请检查网络连接');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing]);
 
   // Swap currencies
   const handleSwap = useCallback(() => {
@@ -199,6 +223,8 @@ const App: React.FC = () => {
         onRefresh={handleRefresh}
         refreshing={isRefreshing}
         onCheckCache={() => setShowCacheStatus(true)}
+        onSyncToCloud={handleSyncToCloud}
+        syncing={isSyncing}
       />
 
       {/* Cache status dialog */}

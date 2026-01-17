@@ -4,7 +4,8 @@ import {
   getCurrencyData, 
   areAllBasePairsUpdatedToday, 
   markBatchUpdateComplete,
-  hasCachedData 
+  hasCachedData,
+  getAllCachedPairs
 } from './cacheManager';
 import { canMakeApiCall, recordApiCall, getTimeUntilNextCall } from './rateLimiter';
 import { fetchRatesFromBackend, saveRatesToBackend, isBackendAvailable } from './backendApi';
@@ -325,4 +326,69 @@ export function calculatePercentageChange(rates: DailyRate[]): { date: string; v
     date: rate.date,
     value: ((rate.close - baseValue) / baseValue) * 100,
   }));
+}
+
+// Sync all cached data to backend (Supabase)
+// This uploads ALL local IndexedDB data to the cloud
+export async function syncAllCachedDataToBackend(
+  onProgress?: (current: number, total: number, pair: string) => void
+): Promise<{ success: number; failed: number; totalRecords: number }> {
+  const cachedPairs = await getAllCachedPairs();
+  const total = cachedPairs.length;
+  let current = 0;
+  let success = 0;
+  let failed = 0;
+  let totalRecords = 0;
+
+  // Check if backend is available
+  const backendAvailable = await isBackendAvailable();
+  if (!backendAvailable) {
+    console.error('后端服务不可用');
+    return { success: 0, failed: total, totalRecords: 0 };
+  }
+
+  for (const cachedData of cachedPairs) {
+    const pairName = `${cachedData.pair.from}/${cachedData.pair.to}`;
+    current++;
+    
+    try {
+      const rates = cachedData.rates;
+      if (rates.length === 0) {
+        onProgress?.(current, total, pairName);
+        continue;
+      }
+
+      // Convert to backend format and upload in batches
+      const backendRates = rates.map(rate => ({
+        from: cachedData.pair.from,
+        to: cachedData.pair.to,
+        date: rate.date,
+        open: rate.open,
+        high: rate.high,
+        low: rate.low,
+        close: rate.close,
+      }));
+
+      // Upload in batches of 500 to avoid request size limits
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < backendRates.length; i += BATCH_SIZE) {
+        const batch = backendRates.slice(i, i + BATCH_SIZE);
+        const saved = await saveRatesToBackend(batch);
+        if (!saved) {
+          throw new Error(`Failed to save batch ${i}-${i + batch.length}`);
+        }
+      }
+
+      totalRecords += rates.length;
+      success++;
+      console.log(`✓ 同步 ${pairName}: ${rates.length} 条记录`);
+    } catch (error) {
+      console.error(`✗ 同步 ${pairName} 失败:`, error);
+      failed++;
+    }
+
+    onProgress?.(current, total, pairName);
+  }
+
+  return { success, failed, totalRecords };
 }
