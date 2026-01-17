@@ -26,32 +26,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Missing from or to currency' });
       }
 
-      let query = supabase
-        .from('exchange_rates')
-        .select('*')
-        .eq('from_currency', from)
-        .eq('to_currency', to)
-        .order('date', { ascending: true })
-        .limit(10000);  // Supabase default is 1000, increase to get all historical data
+      // Supabase has a 1000 row limit per query, use pagination to get all data
+      const PAGE_SIZE = 1000;
+      let allData: any[] = [];
+      let page = 0;
+      let hasMore = true;
 
-      if (start_date) {
-        query = query.gte('date', start_date);
-      }
-      if (end_date) {
-        query = query.lte('date', end_date);
-      }
+      while (hasMore) {
+        let query = supabase
+          .from('exchange_rates')
+          .select('*')
+          .eq('from_currency', from)
+          .eq('to_currency', to)
+          .order('date', { ascending: true })
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      const { data, error } = await query;
+        if (start_date) {
+          query = query.gte('date', start_date);
+        }
+        if (end_date) {
+          query = query.lte('date', end_date);
+        }
 
-      if (error) {
-        console.error('Supabase error:', error);
-        return res.status(500).json({ error: 'Database error', details: error.message });
+        const { data, error } = await query;
+
+        if (error) {
+          console.error('Supabase error:', error);
+          return res.status(500).json({ error: 'Database error', details: error.message });
+        }
+
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          hasMore = data.length === PAGE_SIZE;
+          page++;
+        } else {
+          hasMore = false;
+        }
+
+        // Safety limit: max 10 pages (10000 records)
+        if (page >= 10) {
+          hasMore = false;
+        }
       }
 
       return res.status(200).json({
         success: true,
-        data: data || [],
-        count: data?.length || 0,
+        data: allData,
+        count: allData.length,
       });
     }
 
